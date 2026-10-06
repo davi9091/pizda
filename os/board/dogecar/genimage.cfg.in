@@ -1,4 +1,4 @@
-# SD card layout. post-image.sh fills in #BOOT_FILES#.
+# SD card layout. post-image.sh fills in the boot file list below.
 #   p1 boot: firmware, kernel, DTBs, config.txt, cmdline.txt
 #   p2 root: the OS (ext4 for now; read-only squashfs from M2)
 #   p3 data: recordings, config, keys (grown to fill the card on first boot from M2)
