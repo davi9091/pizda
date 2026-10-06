@@ -1,0 +1,4 @@
+# Pinned Buildroot release (2026.02.x is the current LTS series).
+# Hash from https://buildroot.org/downloads/buildroot-$(BR_VERSION).tar.xz.sign
+BR_VERSION := 2026.02.3
+BR_SHA256 := 5a59e7501b0b4ec52c41f4bfa79412320e0b37eae5f719605a258e8d0c6fc7fb

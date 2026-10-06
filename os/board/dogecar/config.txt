@@ -1,0 +1,22 @@
+# Raspberry Pi firmware config for dogecar (Pi Zero 2 W, 64-bit).
+# Reference: https://www.raspberrypi.com/documentation/computers/config_txt.html
+
+start_file=start.elf
+fixup_file=fixup.dat
+kernel=Image
+arm_64bit=1
+
+# Boot fast and quietly.
+boot_delay=0
+disable_splash=1
+
+# KMS display driver: HDMI now; composite/DPI/SPI display profiles build on it later.
+dtoverlay=vc4-kms-v3d
+disable_overscan=1
+
+# Serial console on the mini UART (GPIO 14/15, /dev/ttyS0). This also pins the
+# core clock so the mini UART baud rate is stable. Bluetooth keeps the PL011.
+enable_uart=1
+
+# Hardware watchdog (/dev/watchdog); nothing feeds it yet (M8).
+dtparam=watchdog=on

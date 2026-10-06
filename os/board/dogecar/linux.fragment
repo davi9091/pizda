@@ -1,0 +1,37 @@
+# Kernel options dogecar depends on, on top of the Raspberry Pi bcm2711 defconfig.
+# Most are already set there; listing them keeps them from silently disappearing.
+
+# Display (KMS)
+CONFIG_DRM=m
+CONFIG_DRM_VC4=m
+
+# Wi-Fi (CYW43436 on SDIO)
+CONFIG_BRCMFMAC=m
+
+# Bluetooth + serial-over-Bluetooth for the ELM327
+CONFIG_BT=m
+CONFIG_BT_HCIUART=m
+CONFIG_BT_HCIUART_BCM=y
+CONFIG_BT_RFCOMM=m
+CONFIG_BT_RFCOMM_TTY=y
+
+# USB ELM327 adapters
+CONFIG_USB_ACM=m
+CONFIG_USB_SERIAL=m
+CONFIG_USB_SERIAL_FTDI_SIO=m
+CONFIG_USB_SERIAL_CH341=m
+CONFIG_USB_SERIAL_CP210X=m
+CONFIG_USB_SERIAL_PL2303=m
+
+# I2C and GPIO sensors
+CONFIG_I2C_CHARDEV=m
+CONFIG_GPIO_CDEV=y
+
+# Hardware watchdog
+CONFIG_WATCHDOG=y
+CONFIG_BCM2835_WDT=y
+
+# Filesystems: ext4 for /data, squashfs for the read-only root (M2)
+CONFIG_EXT4_FS=y
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_XZ=y
