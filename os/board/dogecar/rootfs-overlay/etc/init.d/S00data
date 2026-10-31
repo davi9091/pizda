@@ -1,0 +1,150 @@
+#!/bin/sh
+#
+# Bring up /data, the only writable storage: grow the partition to fill the
+# card (first boot), check it, mount it, and keep the boot counters.
+#
+# Power can be cut at any moment, so every step is safe to repeat on the next
+# boot. And the dashboard matters more than /data: this script never stops
+# the boot. Whatever happens is recorded in /run/dogecar/ for the app and the
+# status page:
+#   data_status         "ok" or "unavailable: <reason>"
+#   boot_count          this boot's number
+#   unclean_shutdowns   power cuts so far (boots without a clean shutdown before)
+#   data.log            what this script did
+# data.log is also kept as /data/state/last-boot.log.
+
+DISK=/dev/mmcblk0
+PARTNUM=3
+PART=${DISK}p${PARTNUM}
+MNT=/data
+# data=ordered (the default) is enough: recordings only append and config
+# files are replaced by rename, so nothing is overwritten in place.
+OPTS=noatime,errors=remount-ro
+STATE=/data/state
+RUN=/run/dogecar
+
+log() {
+	echo "data: $*" > /dev/kmsg
+	echo "$*" >> "$RUN/data.log"
+}
+
+unavailable() {
+	log "unavailable: $*"
+	echo "unavailable: $*" > "$RUN/data_status"
+}
+
+# Run a command, appending its output to data.log; returns its exit code.
+run() {
+	"$@" >> "$RUN/data.log" 2>&1
+}
+
+# Extend the data partition to the end of the card if there's room. Only
+# rewrites the partition table's entry for p3; the filesystem is grown after
+# mounting. If power is cut in between, the next boot just grows the
+# filesystem.
+grow_partition() {
+	disk=$(basename "$DISK")
+	part=$(basename "$PART")
+	disk_size=$(cat "/sys/block/$disk/size")
+	start=$(cat "/sys/block/$disk/$part/start")
+	size=$(cat "/sys/block/$disk/$part/size")
+	# Sizes are in 512-byte sectors. Ignore less than 16 MiB of slack.
+	[ $((disk_size - start - size)) -gt 32768 ] || return 0
+
+	log "growing partition $PARTNUM to fill the card"
+	if ! echo ", +" | run sfdisk --no-reread --no-tell-kernel -N "$PARTNUM" "$DISK"; then
+		log "sfdisk failed; keeping the current size"
+		return 0
+	fi
+	run partx -u -n "$PARTNUM" "$DISK" || log "partx failed; the new size applies after a reboot"
+}
+
+# e2fsck exit codes are a bitmask: 1 = errors fixed, 2 = reboot advised
+# (only matters for the root filesystem), 4 = errors left, 8+ = e2fsck failed.
+check() {
+	run e2fsck -p "$PART"
+	rc=$?
+	if [ $((rc & 4)) -ne 0 ]; then
+		log "e2fsck -p left errors (exit $rc); retrying with -y"
+		run e2fsck -y "$PART"
+		rc=$?
+	fi
+	if [ "$rc" -ge 4 ]; then
+		unavailable "e2fsck failed (exit $rc)"
+		return 1
+	fi
+	[ "$rc" -eq 0 ] || log "e2fsck fixed errors (exit $rc)"
+	return 0
+}
+
+# Replace a file's content so it's always either the old or the new value.
+write_atomic() {
+	printf '%s\n' "$2" > "$1.tmp" && sync && mv "$1.tmp" "$1"
+}
+
+read_number() {
+	n=$(cat "$1" 2>/dev/null)
+	case "$n" in
+		''|*[!0-9]*) echo 0 ;;
+		*) echo "$n" ;;
+	esac
+}
+
+update_counters() {
+	mkdir -p "$STATE"
+
+	boots=$(( $(read_number "$STATE/boot_count") + 1 ))
+	write_atomic "$STATE/boot_count" "$boots"
+	echo "$boots" > "$RUN/boot_count"
+
+	# "running" exists from boot until a clean shutdown removes it, so if
+	# it's still here, the last run ended with a power cut.
+	unclean=$(read_number "$STATE/unclean_shutdowns")
+	if [ -e "$STATE/running" ]; then
+		unclean=$((unclean + 1))
+		write_atomic "$STATE/unclean_shutdowns" "$unclean"
+		log "previous shutdown was unclean ($unclean so far)"
+	fi
+	echo "$unclean" > "$RUN/unclean_shutdowns"
+	touch "$STATE/running"
+	sync
+}
+
+start() {
+	mkdir -p "$RUN"
+	: > "$RUN/data.log"
+
+	if [ ! -b "$PART" ]; then
+		unavailable "$PART not found"
+		return
+	fi
+
+	grow_partition
+	check || return
+
+	if ! run mount -t ext4 -o "$OPTS" "$PART" "$MNT"; then
+		unavailable "mount failed"
+		return
+	fi
+	# No-op unless the partition was just grown (or a grow was interrupted).
+	run resize2fs "$PART" || log "resize2fs failed; continuing at the current size"
+
+	update_counters
+	echo ok > "$RUN/data_status"
+	log "mounted (boot $boots)"
+	cp "$RUN/data.log" "$STATE/last-boot.log"
+}
+
+stop() {
+	grep -q " $MNT " /proc/mounts || return 0
+	rm -f "$STATE/running"
+	sync
+	umount "$MNT"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	*) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac
+exit 0

@@ -34,4 +34,4 @@ CONFIG_BCM2835_WDT=y
 # Filesystems: ext4 for /data, squashfs for the read-only root (M2)
 CONFIG_EXT4_FS=y
 CONFIG_SQUASHFS=y
-CONFIG_SQUASHFS_XZ=y
+CONFIG_SQUASHFS_ZSTD=y

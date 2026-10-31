@@ -1,0 +1,3 @@
+# The root filesystem is read-only; keep the random seed on /data.
+# If /data isn't mounted this fails harmlessly (S01seedrng never fails boot).
+SEEDRNG_ARGS="--seed-dir=/data/state/seedrng"

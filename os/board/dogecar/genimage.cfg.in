@@ -1,7 +1,7 @@
 # SD card layout. post-image.sh fills in the boot file list below.
 #   p1 boot: firmware, kernel, DTBs, config.txt, cmdline.txt
-#   p2 root: the OS (ext4 for now; read-only squashfs from M2)
-#   p3 data: recordings, config, keys (grown to fill the card on first boot from M2)
+#   p2 root: the OS, read-only squashfs. Fixed size so p3 never moves between images.
+#   p3 data: recordings, config, keys. S00data grows it to fill the card on first boot.
 
 image boot.vfat {
 	vfat {
@@ -17,6 +17,10 @@ image data.ext4 {
 	ext4 {
 		label = "data"
 		use-mke2fs = true
+		# Normal-sized settings (4K blocks, an inode per 16K), not the
+		# "small filesystem" ones: they stick after S00data grows it to the
+		# whole card.
+		extraargs = "-T default"
 	}
 	size = 64M
 }
@@ -33,7 +37,8 @@ image sdcard.img {
 
 	partition rootfs {
 		partition-type = 0x83
-		image = "rootfs.ext4"
+		image = "rootfs.squashfs"
+		size = 256M
 	}
 
 	partition data {

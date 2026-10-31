@@ -9,3 +9,6 @@ if [ -e "${TARGET_DIR}/etc/inittab" ]; then
 		sed -i '/GENERIC_SERIAL/a\
 tty1::respawn:/sbin/getty -L tty1 0 linux # HDMI console' "${TARGET_DIR}/etc/inittab"
 fi
+
+# Mount point for the data partition (see /etc/init.d/S00data).
+mkdir -p "${TARGET_DIR}/data"
