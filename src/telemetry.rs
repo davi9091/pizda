@@ -6,15 +6,8 @@ use crate::signal::Signal;
 /// Everything a source can tell the rest of the app.
 #[derive(Debug, Clone)]
 pub enum Event {
-    Sample {
-        signal: Signal,
-        value: f64,
-        at: Instant,
-    },
-    Status {
-        source: &'static str,
-        status: SourceStatus,
-    },
+    Sample { signal: Signal, value: f64, at: Instant },
+    Status { source: &'static str, status: SourceStatus },
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,6 @@
+# Same Rust version as Buildroot's host-rust-bin (build/buildroot-*/package/rust-bin/rust-bin.mk),
+# so code that builds here also builds in the Pi image. Bump both together.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

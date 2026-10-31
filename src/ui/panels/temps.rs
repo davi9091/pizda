@@ -29,13 +29,10 @@ impl Panel for TempsPanel {
         let rows = Layout::vertical(self.signals.iter().map(|_| Constraint::Length(2))).split(inner);
 
         for (&signal, row) in self.signals.iter().zip(rows.iter()) {
-            let [label, value, bar] = Layout::horizontal([
-                Constraint::Length(16),
-                Constraint::Length(8),
-                Constraint::Min(0),
-            ])
-            .spacing(1)
-            .areas(Rect { height: 1, ..*row });
+            let [label, value, bar] =
+                Layout::horizontal([Constraint::Length(16), Constraint::Length(8), Constraint::Min(0)])
+                    .spacing(1)
+                    .areas(Rect { height: 1, ..*row });
 
             let reading = telemetry.latest(signal);
             let style = value_style(signal, reading);

@@ -57,7 +57,7 @@ impl Source for Elm327 {
 
         let mut tick: u32 = 0;
         while !sink.should_stop() {
-            for poll in plan.iter_mut().filter(|p| tick % p.every == 0) {
+            for poll in plan.iter_mut().filter(|p| tick.is_multiple_of(p.every)) {
                 match link.query_pid(poll.pid.code)? {
                     Some(data) => {
                         poll.misses = 0;
@@ -73,7 +73,7 @@ impl Source for Elm327 {
                 bail!("ECU stopped responding");
             }
 
-            if tick % BATTERY_EVERY == 0
+            if tick.is_multiple_of(BATTERY_EVERY)
                 && let Some(volts) = link.battery_voltage()?
             {
                 sink.emit(Signal::BatteryVolts, volts);
@@ -187,7 +187,7 @@ fn parse_pid_response(pid: u8, lines: &[String]) -> Result<Option<Vec<u8>>> {
 }
 
 fn decode_hex(s: &str) -> Result<Vec<u8>> {
-    if s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !s.len().is_multiple_of(2) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         bail!("bad hex: {s}");
     }
     (0..s.len())

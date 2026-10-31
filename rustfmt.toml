@@ -1,0 +1,5 @@
+# Matches the existing hand-formatted style: wide one-line struct literals and
+# tables, but method chains broken one call per line once they get long.
+max_width = 110
+use_small_heuristics = "Max"
+chain_width = 80

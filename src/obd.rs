@@ -29,6 +29,7 @@ fn ab(d: &[u8]) -> Option<f64> {
     }
 }
 
+#[rustfmt::skip] // one PID per line, read as a table
 pub const PIDS: &[Pid] = &[
     Pid { code: 0x04, signal: Signal::EngineLoadPct, decode: |d| a(d).map(|a| a * 100.0 / 255.0) },
     Pid { code: 0x05, signal: Signal::CoolantTempC, decode: |d| a(d).map(|a| a - 40.0) },
