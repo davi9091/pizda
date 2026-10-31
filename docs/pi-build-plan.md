@@ -2,7 +2,7 @@
 
 How to turn dogecar-ui into a car-ready appliance: a reproducible, locally built OS image that boots straight into the dashboard and survives power being cut at any moment.
 
-Status: **planning**. Nothing in here is implemented yet.
+Status: **M1 done** (2026-10-06: boots to a root shell on a real Zero 2 W). **M2 done** (2026-10-31: read-only root, `/data` grows and survives power cuts, counters correct on real hardware). Next: M3.
 
 ---
 
@@ -16,6 +16,7 @@ Status: **planning**. Nothing in here is implemented yet.
 | Display (goal) | The RX-8's factory pop-up nav screen (analog RGB). How to drive it is still being worked out. |
 | Display (interim) | Headless: the dashboard runs in tmux and is viewed from a phone over SSH. HDMI on the bench. |
 | Inputs | ELM327 over Bluetooth (classic SPP) and USB, plus I2C/GPIO sensors (list TBD) |
+| Signals | Built-in OBD-II set, plus user-defined mappings in `/data/signals.toml` (car-specific PIDs, own sensors) |
 | Networking | The Pi runs its own Wi-Fi access point (country **NL**). SSH stays enabled in production. |
 | Web | A read-only status page: health, power flags, sources, recordings |
 | Power | Switched ACC with an automotive 12→5 V converter. A timed shutdown controller is optional. |
@@ -43,7 +44,7 @@ Status: **planning**. Nothing in here is implemented yet.
 |---|---|---|---|
 | p1 boot | FAT32, ~64 MB | not mounted | firmware, kernel, device tree, `config.txt`, `cmdline.txt` |
 | p2 root | squashfs | read-only | the whole OS and both binaries |
-| p3 data | ext4, `noatime,data=journal` | read-write | recordings, config, Bluetooth keys, SSH host keys, Wi-Fi config |
+| p3 data | ext4, `noatime` (default `data=ordered`) | read-write | recordings, config, Bluetooth keys, SSH host keys, Wi-Fi config |
 | (RAM) | tmpfs | read-write | `/tmp`, `/run`, `/var/log` |
 
 ### Boot sequence
@@ -112,16 +113,16 @@ Each milestone ends in something testable. They're mostly sequential, and the op
 5. Configure the kernel: vc4 KMS, brcmfmac (Wi-Fi), Bluetooth (hci_uart, rfcomm), i2c-dev, gpio cdev, the bcm2835 watchdog, and the USB serial drivers (ftdi_sio, ch341, cp210x, pl2303, cdc_acm).
 6. Enable a serial console on the UART (`enable_uart=1`).
 
-**Done when:** `make image && make flash` gives a card that boots to a shell on the serial console or HDMI.
+**Done when:** `make image && make flash` gives a card that boots to a shell on the serial console or HDMI. ✅
 
 ### M2 — Read-only system and the data partition
 1. Make the root filesystem squashfs, with tmpfs for `/tmp`, `/run` and `/var/log`.
 2. Add a `/data` init script: `e2fsck -p`, then mount. If that fails, continue without `/data` and leave a flag in `/run`.
-3. Add a first-boot script that grows p3 to fill the card, then runs `resize2fs`. It runs once, guarded by a marker file.
+3. Grow p3 to fill the card, then run `resize2fs`. No marker file: each boot checks for unused space after p3, so an interrupted grow simply finishes on the next boot.
 4. Store the boot counter in `/data/state/boot_count`, written atomically.
 5. Keep the boot partition unmounted.
 
-**Done when:** after `make flash`, the first boot expands `/data`. Root can't be remounted read-write, and pulling power during boot recovers cleanly.
+**Done when:** after `make flash`, the first boot expands `/data`. Root can't be remounted read-write, and pulling power during boot recovers cleanly. ✅
 
 ### M3 — Kiosk and display profiles
 1. Create the `doge` user (no password; SSH key only).
@@ -130,6 +131,7 @@ Each milestone ends in something testable. They're mostly sequential, and the op
 4. For profiles other than headless: seatd → cage → foot (with `foot.ini`: font, colours) running `tmux attach -t dash`.
 5. Fonts: ship one pixel font (Spleen, Cozette or Terminus) and one Nerd Font, then compare them on the actual screen.
 6. Remove the login prompt from the display; keep the serial console getty.
+7. HDMI edge cut-off: on a 4K TV, the first few characters of each line ended up off-screen (the TV overscans the upscaled 1080p signal). Fix with the TV's "Just Scan" / "Screen Fit" setting, or give the `hdmi` profile optional margins (`video=HDMI-A-1:1920x1080@60,margin_left=…` in `cmdline.txt`). **For now**, `cmdline.txt` always has 48/24 px margins as a bench workaround; move them into the `hdmi` profile here, since they'd also apply to other HDMI screens.
 
 **Done when:** on boot, `ssh doge@<pi> -t tmux attach -t dash` shows the live dashboard. With the `hdmi` profile, the dashboard also appears on an HDMI monitor.
 
@@ -150,7 +152,7 @@ Each milestone ends in something testable. They're mostly sequential, and the op
 2. **Config file** `/data/dogecar.toml`: display profile, Bluetooth MAC, sensor wiring, Wi-Fi mode. Unknown keys produce warnings, not errors.
 3. **Crash-safe logger:**
    - recordings are append-only CSV (existing format), with an `fsync` every ~2 s and a new file every ~10 min
-   - file names use the boot counter (`drive-000123-01.csv`), because there's no clock yet
+   - no wall clock (see ⎇ T): file names use boot counter and segment (`drive-000123-01.csv`), and a header comment records `boot`, `segment` and `uptime_at_start`; `t` stays relative, as the format already defines
    - if `/data` is unavailable, show a "not recording" indicator and keep the dashboard running
 4. **Tolerant replay:** a cut-off final line is ignored instead of failing the whole file.
 5. **Atomic config writes:** write a temp file, fsync it, rename it over the original, fsync the directory.
@@ -159,6 +161,24 @@ Each milestone ends in something testable. They're mostly sequential, and the op
 8. Handle SIGTERM and SIGHUP cleanly: flush the recording, restore the terminal.
 
 **Done when:** `dogecar-ui --auto` finds a USB ELM327 with no arguments and records a drive. Killing the power mid-drive loses at most ~2 s, and the replay source plays the result back.
+
+### M5b — User-defined signals
+Car-specific values (e.g. Mazda mode 22 PIDs documented by the RX-8 community) and your own sensors, added through config instead of code.
+
+1. **Signal registry:** turn the closed `Signal` enum into a registry of built-in signals (same stable keys as today) plus user signals loaded from `/data/signals.toml`. A user key that collides with a built-in is rejected. Keys must stay stable, the same rule as for built-ins.
+2. **Mapping fields:** `key`, `label`, `unit`, `precision`, `range` (for gauges), `every` (poll rate), `source`, plus source-specific fields:
+   - `obd`: `request` (e.g. `22xxxx`), optional `header` (target ECU, e.g. `7E0`), `formula`
+   - sensor sources (M7): device and channel, `formula`
+3. **Formulas:** Torque-style expressions over the reply bytes (`A`, `B`, `C`, …), e.g. `(A*256+B)/4`, and over the measured voltage `V` for sensors. This lets community PID lists be copied almost directly. A small, tested expression evaluator; no general scripting.
+4. **Built-ins:** decoding stays in Rust. Config can disable them and change `every`, `label` and `range`, but not their formulas.
+5. **Probe and diag:** at startup, each mapping is tried once, and the diag report says which answered, which returned no data, and which failed to parse. Bad entries are skipped with a warning; they never stop the app.
+6. **Replay:** recordings keep working whatever the current mappings are. Unknown keys load as "unknown" signals (key only, raw value) instead of failing the file.
+7. **Display:** user signals appear in a generic "extra values" panel. A configurable layout can come later if it's wanted.
+8. **Polling budget:** an ELM327 over Bluetooth manages roughly 10–20 requests a second in total, so the diag screen shows the effective rate per signal.
+
+**Done when:** adding a mode 22 entry to `signals.toml` and restarting shows the value on the dashboard and in recordings, and removing it again leaves old recordings replayable.
+
+Later, not in M5b: passive CAN listening (broadcast frames such as wheel speeds) through a dedicated CAN interface rather than the ELM327.
 
 ### M6a — Bluetooth ELM327
 1. Add bluez5 (bluetoothd and the command-line tools); keep `/var/lib/bluetooth` on `/data`.
@@ -189,7 +209,7 @@ Each milestone ends in something testable. They're mostly sequential, and the op
 
 ### M7 — I2C and GPIO sensors
 1. Enable `dtparam=i2c_arm=on` and give the `doge` user access to `/dev/i2c-*` and `/dev/gpiochip*`.
-2. Add a source per sensor type in the app (e.g. an ADS1115 ADC for pressure senders), configured in `dogecar.toml`.
+2. Add a source per sensor type in the app (e.g. an ADS1115 ADC for pressure senders). Wiring goes in `dogecar.toml`; what each channel means (formula, unit, range) uses the M5b mapping format in `signals.toml`.
 3. Optional: an ignition-sense input (see ⎇ P2).
 4. **Pins:** keep sensor wiring easy to move between buses until the nav screen route is decided, because ⎇ D3 takes GPIO 2–21.
 
@@ -247,19 +267,21 @@ The kernel ships with the drivers for all of these, so changing the screen is a 
 | Pi + 5" HDMI panel + ELM327 | ~3–4 W | ~6 W |
 
 ### ⎇ I — Init system
-- **I1. BusyBox init** (leaning this way): fastest boot, simple respawn lines.
+- **I1. BusyBox init** (**chosen** in M2): fastest boot, simple respawn lines.
 - **I2. systemd:** nicer dependency ordering, watchdog support and restart policies, for about 2–4 s more boot time.
 
-Decide during M1 or M2; it mostly affects how M2, M3 and M6 are written.
+Decided in M2: BusyBox init. Boot scripts live in `os/board/dogecar/rootfs-overlay/etc/init.d/`.
 
 ### ⎇ U — Updates
 - **U1. Reflash** (default): `make image && make flash`. `/data` lives on the same card, so back it up over SFTP first, or keep it by flashing only p1 and p2.
 - **U2. A/B root partitions:** two root slots and a boot flag; upload a new root image over Wi-Fi with automatic fallback if it fails to boot. Only worth it once the system is stable.
 
 ### ⎇ T — Real-time clock
-- **T0. None** (default): files are named by boot counter.
-- **T1. RTC module** (DS3231 on I2C, about €5): real dates in file names and on the status page. It uses the I2C bus, so plan the pins around D3.
-- **T2. Time from the phone:** the status page sends the phone's clock once when it's opened. No hardware needed, but less reliable.
+**Decided: no wall clock for now.** The car often runs with no phone connected, so phone sync or a saved clock would be unreliable, and nothing on the system needs the real date. Recordings are identified by boot counter and segment, and timed with the monotonic clock (see M5).
+
+If real dates become wanted later, add a `# start:` header line to recordings. The format already ignores comment lines, so old files stay valid. Possible sources:
+- **T1. RTC module** (DS3231 on I2C, about €5): correct from the first second of boot. It uses the I2C pins, so plan around D3 (`i2c-rtc-gpio` can move it to other pins).
+- **T2. Time from the phone:** the status page sends the phone's clock when opened. This only helps for drives where the phone connects.
 
 ---
 
@@ -275,7 +297,7 @@ Decide during M1 or M2; it mostly affects how M2, M3 and M6 are written.
 | Micro-USB OTG hub | USB ELM327 plus anything else on the bench | ~€5–10 |
 | Display, depending on branch | D1–D5 | €5–50 |
 | Timed shutdown controller | P2 | ~€15–30 |
-| DS3231 RTC | T1 | ~€5 |
+| DS3231 RTC (only if dates are wanted later) | T1 | ~€5 |
 | Relay or smart plug | M8 torture test | ~€10 |
 
 ---
@@ -284,8 +306,8 @@ Decide during M1 or M2; it mostly affects how M2, M3 and M6 are written.
 
 1. **Nav screen signal:** the timing and pinout of the RX-8 nav unit's RGB output. This decides D2 vs D3.
 2. **I2C/GPIO sensor list:** which senders and ADCs, and whether ignition sense is wanted.
-3. **USB-serial adapter:** available for M1? Without one, early boot debugging falls back to HDMI.
-4. **Init system:** I1 or I2, decided during M1 or M2.
+3. **Car-specific values:** which RX-8-specific data you want first (M5b), to choose the first mode 22 PIDs to test.
+4. **USB-serial adapter:** available for M1? Without one, early boot debugging falls back to HDMI.
 
 ---
 
