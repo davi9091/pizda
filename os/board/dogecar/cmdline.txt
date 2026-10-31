@@ -1,1 +1,1 @@
-root=/dev/mmcblk0p2 rootfstype=squashfs ro rootwait console=tty1 console=ttyS0,115200 quiet
+root=/dev/mmcblk0p2 rootfstype=squashfs ro rootwait console=tty1 console=ttyS0,115200 quiet video=HDMI-A-1:1920x1080@60,margin_left=48,margin_right=48,margin_top=24,margin_bottom=24
