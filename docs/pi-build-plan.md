@@ -139,8 +139,22 @@ Each milestone ends in something testable. They're mostly sequential, and the op
 1. Turn the repo into a workspace (`crates/common`, `crates/dogecar-ui`); keep the tests green.
 2. Add a Buildroot package for `dogecar-ui` using the cargo package support, building from the local source tree.
 3. Set up `make app` and `make deploy`: binaries placed in `/data/dev/bin` take priority over the image's copies when present. This is a dev-only override that `make deploy --clean` removes.
+4. **Data-safe updates: `make update DEV=/dev/sdX`.** Updates the system on a card without touching `/data` (recordings, config, keys, user-defined signals). The release stays a single `dogecar.img`.
+   - **Layout check:** p1 and p2 on the card must start and end at the same sectors as in the image. If not, refuse and say a full `make flash` is needed (which wipes `/data`).
+   - **Write only p1 (boot) and p2 (system)**, copied out of the image at their offsets.
+   - **Never write sector 0** (the partition table) or p3. On the card, p3 has grown to fill it; the image's table still says 64 MB.
+   - Same safety checks as `flash.sh`: whole removable disk, nothing mounted, confirmation.
+   - If the write is interrupted, the card doesn't boot until `make update` is run again; `/data` is never at risk.
+   - Show the image's version (e.g. from `git describe`, also written to `/etc/os-release` in the image).
+5. **Data migrations.** A newer system must understand an older `/data`:
+   - store the data-format version in `/data/state/data_version`
+   - at boot, after `S00data` mounts `/data`, run each pending migration in order. Each one is safe to interrupt and rerun (same rules as `S00data`) and bumps the version only when it has finished. A failed migration is reported in `/run/dogecar/` and never stops the boot.
+   - a system older than the data (a downgrade) leaves `/data` untouched and reports it, rather than guessing
+   - config files: unknown keys are warnings (see M5), and removed keys stay accepted for at least one release
+   - recordings never need migrating: the format and signal keys are stable (see AGENTS.md)
+6. **Nothing user-customizable lives in p1**, because updates overwrite it. Settings that are in `config.txt` or `cmdline.txt` today (e.g. the HDMI margins) move to `/data` (see M3).
 
-**Done when:** a code change reaches the running Pi in under a minute without reflashing.
+**Done when:** a code change reaches the running Pi in under a minute without reflashing, and `make update` replaces the system on a used card while recordings, config and counters survive.
 
 ### M5 — App changes
 1. **`--auto` mode with a probe phase**, shown on a short diag screen:
@@ -273,7 +287,7 @@ The kernel ships with the drivers for all of these, so changing the screen is a 
 Decided in M2: BusyBox init. Boot scripts live in `os/board/dogecar/rootfs-overlay/etc/init.d/`.
 
 ### ⎇ U — Updates
-- **U1. Reflash** (default): `make image && make flash`. `/data` lives on the same card, so back it up over SFTP first, or keep it by flashing only p1 and p2.
+- **U1. Card update** (default): `make image && make update DEV=…` writes only the boot and system partitions and keeps `/data` (see M4). A full `make flash` wipes `/data`; it's only needed for a new card or a layout change.
 - **U2. A/B root partitions:** two root slots and a boot flag; upload a new root image over Wi-Fi with automatic fallback if it fails to boot. Only worth it once the system is stable.
 
 ### ⎇ T — Real-time clock
@@ -308,6 +322,7 @@ If real dates become wanted later, add a `# start:` header line to recordings. T
 2. **I2C/GPIO sensor list:** which senders and ADCs, and whether ignition sense is wanted.
 3. **Car-specific values:** which RX-8-specific data you want first (M5b), to choose the first mode 22 PIDs to test.
 4. **USB-serial adapter:** available for M1? Without one, early boot debugging falls back to HDMI.
+5. **Reserve a second root partition now?** If A/B updates (⎇ U2) are likely, the layout needs root B. Adding it later means one full reflash that wipes `/data`, which is cheap now while `/data` holds nothing important, and costs 256 MB of card space. Not decided yet.
 
 ---
 
