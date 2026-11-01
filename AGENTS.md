@@ -84,6 +84,7 @@ Check with the maintainer before:
 ## Gotchas
 
 - **Buildroot doesn't track config changes.** After editing the defconfig, a plain `make image` may not rebuild what changed. Rebuild the affected package (`make br-<package>-rebuild`, or `make br-linux-reconfigure` after editing `linux.fragment`). Changes to the root filesystem type, the init system or removed packages need `make clean && make image`.
+- **The app in the image is built from a copy of this repo** (`os/package/dogecar-ui/`), taken the first time the package builds. After changing the app, run `make br-dogecar-ui-rebuild` before `make image`, or the image keeps the old binary.
 - **`config.txt` and `cmdline.txt` are installed by the `rpi-firmware` package**, so run `make br-rpi-firmware-rebuild` before `make image`, and then reflash. Changes to `rootfs-overlay/` are picked up by a plain `make image`.
 - **`cmdline.txt` must stay a single line**; the firmware ignores anything after the first line break.
 - **`genimage.cfg.in` placeholder:** `post-image.sh` substitutes `#BOOT_FILES#` everywhere in the template, including comments, so that marker must only appear where the file list goes.

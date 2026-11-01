@@ -2,7 +2,7 @@
 
 How to turn dogecar-ui into a car-ready appliance: a reproducible, locally built OS image that boots straight into the dashboard and survives power being cut at any moment.
 
-Status: **M1 done** (2026-10-06: boots to a root shell on a real Zero 2 W). **M2 done** (2026-10-31: read-only root, `/data` grows and survives power cuts, counters correct on real hardware). Next: M3.
+Status: **M1 done** (2026-10-06: boots to a root shell on a real Zero 2 W). **M2 done** (2026-10-31: read-only root, `/data` grows and survives power cuts, counters correct on real hardware). **M3 + M3b done** (2026-11-01: dashboard starts at boot in tmux; full-screen kiosk on HDMI with working keyboard, console switching and hidden cursor; headless profile works). Next: M4.
 
 ---
 
@@ -125,19 +125,36 @@ Each milestone ends in something testable. They're mostly sequential, and the op
 **Done when:** after `make flash`, the first boot expands `/data`. Root can't be remounted read-write, and pulling power during boot recovers cleanly. ✅
 
 ### M3 — Kiosk and display profiles
-1. Create the `doge` user (no password; SSH key only).
-2. Start a tmux session `dash` at boot running `dogecar-ui --auto`, restarted if it exits.
-3. Read the display profile from `/data/dogecar.toml`, defaulting to `headless`.
-4. For profiles other than headless: seatd → cage → foot (with `foot.ini`: font, colours) running `tmux attach -t dash`.
-5. Fonts: ship one pixel font (Spleen, Cozette or Terminus) and one Nerd Font, then compare them on the actual screen.
-6. Remove the login prompt from the display; keep the serial console getty.
-7. HDMI edge cut-off: on a 4K TV, the first few characters of each line ended up off-screen (the TV overscans the upscaled 1080p signal). Fix with the TV's "Just Scan" / "Screen Fit" setting, or give the `hdmi` profile optional margins (`video=HDMI-A-1:1920x1080@60,margin_left=…` in `cmdline.txt`). **For now**, `cmdline.txt` always has 48/24 px margins as a bench workaround; move them into the `hdmi` profile here, since they'd also apply to other HDMI screens.
+Split on 2026-10-31 into the headless part (here) and the display stack (M3b), because the display stack needs Mesa and udev, which cost build time, image size and boot time. Both were then done together.
 
-**Done when:** on boot, `ssh doge@<pi> -t tmux attach -t dash` shows the live dashboard. With the `hdmi` profile, the dashboard also appears on an HDMI monitor.
+1. Create the `doge` user: UID 1000, no password login (SSH keys in M6b), in `dialout` and `tty`. Defined in `os/board/dogecar/users.txt`.
+2. The app is built into the image (M4 step 2, done early), and init runs a tmux server as `doge` (`/usr/libexec/dogecar/session`, restarted if it exits). Its config (`/etc/dogecar/tmux.conf`) creates the `dash` session, whose pane runs the app in a restart loop (`/usr/libexec/dogecar/run`). App arguments come from `args` in `/data/dogecar.toml`; the default is `--mock` until `--auto` exists (M5).
+3. Read the display profile (`display`) from `/data/dogecar.toml` (see M3b for the profiles).
+4. `dogecar-attach` shows the dashboard in the current terminal (serial, HDMI console, later SSH); Ctrl-b d detaches.
+5. Keep login prompts on serial and on an HDMI console: until M6b they're the only way in.
+
+**Done when:** after boot, `dogecar-attach` (as root on the serial or HDMI console) shows the live mock dashboard, quitting the app restarts it, and killing the tmux server brings it back. ✅
+
+### M3b — Display stack
+Needed for the `hdmi` profile and the final screen (M9). Done right after M3 (2026-11-01).
+
+1. Mesa (Gallium `vc4`, the Zero 2 W's GPU; EGL + GLES), eudev instead of kernel-only device handling, the seatd daemon (grants group `video` access to the display), cage and foot. Plus a generated `C.UTF-8` locale (`BR2_GENERATE_LOCALE`): glibc doesn't build it in, and foot refuses to start without a UTF-8 locale ("invalid locale, failed to find fallback").
+2. `/usr/libexec/dogecar/display` runs on tty1 (restarted by init) and picks the profile from `display` in `/data/dogecar.toml`:
+   - `auto` (default): `hdmi` if a screen is connected to the HDMI port, otherwise `headless`
+   - `hdmi`: seatd → cage → foot → `dogecar-attach`, as `doge`. When the attach ends, the whole chain exits and init starts it again.
+   - `headless`: a normal login prompt on tty1
+   The result is written to `/run/dogecar/display_status`.
+3. Fonts: no pixel font (Spleen, Terminus) or Nerd Font is packaged in Buildroot; **DejaVu Sans Mono** is, and it includes the braille characters ratatui charts use. Settings `font`, `font_size` (default 20) and `pad` override it per install. A pixel font or Nerd Font would mean adding a small font package of our own.
+4. A login prompt stays on tty2 for development (Ctrl+Alt+F2 from the kiosk, Ctrl+Alt+F1 back).
+5. HDMI edge cut-off: on a 4K TV, the first few characters of each line ended up off-screen (the TV overscans the upscaled 1080p signal). Fix with the TV's "Just Scan" / "Screen Fit" setting where possible. `cmdline.txt` still has 48/24 px kernel margins as a bench workaround; the kiosk can instead use foot's padding (`pad = "48x24"` in `dogecar.toml`), which lives in `/data` and survives updates. **To check on hardware:** whether the kernel margins also apply under cage. If they do, keep them only until the TV is set to "Just Scan"; if not, remove them from `cmdline.txt` and use `pad`.
+6. **Keyboard and pointer in the kiosk:** `xkeyboard-config` provides the keyboard layouts. Without it cage has no keymap, so no keys work, including Ctrl+Alt+F*n*. Setting `keyboard_layout` (default `us`). The dashboard has no use for a pointer, so the kiosk uses an invisible cursor theme (`dogecar-hidden`, generated in `post-build.sh`); cage has no option to hide the cursor.
+7. eudev also fixes M5's device permissions: its default rules give `/dev/ttyUSB*` to group `dialout`, which `doge` is in.
+
+**Done when:** with a screen on the HDMI port (or `display = "hdmi"`), the dashboard appears full-screen at boot with readable charts, and Ctrl+Alt+F2 reaches a login prompt. ✅
 
 ### M4 — App packaging and dev loop
 1. Turn the repo into a workspace (`crates/common`, `crates/dogecar-ui`); keep the tests green.
-2. Add a Buildroot package for `dogecar-ui` using the cargo package support, building from the local source tree.
+2. Add a Buildroot package for `dogecar-ui` using the cargo package support, building from the local source tree. **Done early in M3** (`os/package/dogecar-ui/`). After changing the app, run `make br-dogecar-ui-rebuild` before `make image`.
 3. Set up `make app` and `make deploy`: binaries placed in `/data/dev/bin` take priority over the image's copies when present. This is a dev-only override that `make deploy --clean` removes.
 4. **Data-safe updates: `make update DEV=/dev/sdX`.** Updates the system on a card without touching `/data` (recordings, config, keys, user-defined signals). The release stays a single `dogecar.img`.
    - **Layout check:** p1 and p2 on the card must start and end at the same sectors as in the image. If not, refuse and say a full `make flash` is needed (which wipes `/data`).
@@ -152,7 +169,7 @@ Each milestone ends in something testable. They're mostly sequential, and the op
    - a system older than the data (a downgrade) leaves `/data` untouched and reports it, rather than guessing
    - config files: unknown keys are warnings (see M5), and removed keys stay accepted for at least one release
    - recordings never need migrating: the format and signal keys are stable (see AGENTS.md)
-6. **Nothing user-customizable lives in p1**, because updates overwrite it. Settings that are in `config.txt` or `cmdline.txt` today (e.g. the HDMI margins) move to `/data` (see M3).
+6. **Nothing user-customizable lives in p1**, because updates overwrite it. Settings that are in `config.txt` or `cmdline.txt` today (e.g. the HDMI margins) move to `/data` (see M3b).
 
 **Done when:** a code change reaches the running Pi in under a minute without reflashing, and `make update` replaces the system on a used card while recordings, config and counters survive.
 
@@ -163,16 +180,17 @@ Each milestone ends in something testable. They're mostly sequential, and the op
    - an I2C scan for known sensor addresses, and the GPIO lines named in config
    - report written to `/data/diag/last.txt`, then switch to the dashboard (view mode) showing only panels with live signals
    - sources keep retrying in the background, so late devices still get picked up
-2. **Config file** `/data/dogecar.toml`: display profile, Bluetooth MAC, sensor wiring, Wi-Fi mode. Unknown keys produce warnings, not errors.
-3. **Crash-safe logger:**
+2. **Config file** `/data/dogecar.toml`: display profile, Bluetooth MAC, sensor wiring, Wi-Fi mode. Unknown keys produce warnings, not errors. Keep `display` and `args` as top-level string settings: the boot scripts read them with a simple shell reader (`/usr/libexec/dogecar/config`).
+3. **Device permissions:** eudev (added in M3b) gives `/dev/ttyUSB*` to group `dialout`. Check `/dev/rfcomm*` too once Bluetooth is in (M6a), and add a udev rule if needed.
+4. **Crash-safe logger:**
    - recordings are append-only CSV (existing format), with an `fsync` every ~2 s and a new file every ~10 min
    - no wall clock (see ⎇ T): file names use boot counter and segment (`drive-000123-01.csv`), and a header comment records `boot`, `segment` and `uptime_at_start`; `t` stays relative, as the format already defines
    - if `/data` is unavailable, show a "not recording" indicator and keep the dashboard running
-4. **Tolerant replay:** a cut-off final line is ignored instead of failing the whole file.
-5. **Atomic config writes:** write a temp file, fsync it, rename it over the original, fsync the directory.
-6. **Status snapshot:** write `/run/dogecar/status.json` about once a second (sources, latest values, recording state).
-7. **Compact layout:** make the dashboard usable down to about 40×15 characters for phones and small screens.
-8. Handle SIGTERM and SIGHUP cleanly: flush the recording, restore the terminal.
+5. **Tolerant replay:** a cut-off final line is ignored instead of failing the whole file.
+6. **Atomic config writes:** write a temp file, fsync it, rename it over the original, fsync the directory.
+7. **Status snapshot:** write `/run/dogecar/status.json` about once a second (sources, latest values, recording state).
+8. **Compact layout:** make the dashboard usable down to about 40×15 characters for phones and small screens.
+9. Handle SIGTERM and SIGHUP cleanly: flush the recording, restore the terminal.
 
 **Done when:** `dogecar-ui --auto` finds a USB ELM327 with no arguments and records a drive. Killing the power mid-drive loses at most ~2 s, and the replay source plays the result back.
 
