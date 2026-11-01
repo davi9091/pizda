@@ -252,8 +252,12 @@ Later, not in M5b: passive CAN listening (broadcast frames such as wheel speeds)
 2. **Power-cycle torture test:** a relay or smart plug cuts power at random times while the Pi is recording, a few hundred times. Afterwards: `/data` fsck is clean, every recording parses, the config is intact and the boot counter is consistent.
 3. **Boot time:** measure it, then trim kernel modules and services until it's under 10 s to the dashboard.
 4. **Under-voltage check** in the real car: drive, crank, idle with the AC on, then check the "since boot" flags on the status page.
+5. **Kiosk restart robustness.** Seen once on 2026-11-01 (not reproducible by hand): after killing parts of the display chain, it recovered into an empty cage window instead of the dashboard; a reboot fixed it.
+   - supervise `seatd` from init (respawn) like the session and display scripts; today `S70seatd` starts it once, so nothing restarts it if it dies
+   - shorten the stacked waits (tmux back-off 5 s, display back-off 5 s, `dogecar-attach` up to 15 s), so normal recovery takes seconds
+   - **restart torture test:** a script that repeatedly kills a random piece of the chain (`dogecar-ui`, tmux server, tmux client, foot, cage, seatd) and checks that within ~15 s a tmux client is attached to `dash` again; when it isn't, it saves the process tree and `/run/dogecar/*` for diagnosis
 
-**Done when:** the torture test passes, boot time is on target and no under-voltage flags show after a real drive.
+**Done when:** both torture tests (power cuts and kiosk restarts) pass, boot time is on target and no under-voltage flags show after a real drive.
 
 ### M9 — Final display (⎇ see section 5)
 Pick and implement one route from section 5 and add its profile.
