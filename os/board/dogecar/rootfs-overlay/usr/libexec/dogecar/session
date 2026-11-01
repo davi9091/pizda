@@ -1,0 +1,15 @@
+#!/bin/sh
+# Run by init (and restarted by it whenever it exits): the tmux server that
+# holds the dashboard, in the foreground, as doge. Its config creates the
+# "dash" session, whose pane runs /usr/libexec/dogecar/run.
+
+RUN=/run/dogecar
+mkdir -p "$RUN"
+
+# If tmux keeps dying straight away, don't let init restart it in a tight loop.
+now=$(cut -d. -f1 /proc/uptime)
+last=$(cat "$RUN/session_started" 2>/dev/null || echo -100)
+[ $((now - last)) -ge 10 ] || sleep 5
+cut -d. -f1 /proc/uptime > "$RUN/session_started"
+
+exec su -s /bin/sh doge -c 'LANG=C.UTF-8 exec tmux -u -D -f /etc/dogecar/tmux.conf'

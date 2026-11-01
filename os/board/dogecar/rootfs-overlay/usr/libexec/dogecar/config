@@ -1,0 +1,20 @@
+#!/bin/sh
+# Print a setting from /data/dogecar.toml, or a default.
+# usage: config KEY DEFAULT
+#
+# Only understands top-level string settings (`key = "value"`) before the
+# first [table], which is all the boot scripts need. The app parses the file
+# properly.
+
+FILE=${DOGECAR_CONFIG:-/data/dogecar.toml}
+key=$1
+default=$2
+
+value=
+if [ -r "$FILE" ]; then
+	value=$(sed -n \
+		-e '/^[[:space:]]*\[/q' \
+		-e "s/^[[:space:]]*$key[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+		"$FILE" | tail -n 1)
+fi
+echo "${value:-$default}"

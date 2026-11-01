@@ -1,0 +1,70 @@
+#!/bin/sh
+# Run by init on tty1 (and restarted by it whenever it exits). Depending on the
+# display profile (`display` in /data/dogecar.toml):
+#   auto      hdmi if a screen is connected to the HDMI port, else headless (default)
+#   hdmi      the dashboard full-screen: seatd → cage → foot → dogecar-attach
+#   headless  a normal login prompt on tty1; the dashboard runs in tmux anyway
+# The chosen profile is written to /run/dogecar/display_status.
+
+RUN=/run/dogecar
+CONFIG=/usr/libexec/dogecar/config
+mkdir -p "$RUN"
+
+status() {
+	echo "$*" > "$RUN/display_status"
+}
+
+# If the kiosk keeps dying straight away, don't let init restart it in a tight loop.
+now=$(cut -d. -f1 /proc/uptime)
+last=$(cat "$RUN/display_started" 2>/dev/null || echo -100)
+[ $((now - last)) -ge 10 ] || sleep 5
+cut -d. -f1 /proc/uptime > "$RUN/display_started"
+
+hdmi_connected() {
+	# The display driver is a module loaded by udev; give it a moment at boot.
+	i=0
+	while [ $i -lt 5 ]; do
+		for s in /sys/class/drm/card*-HDMI-A-*/status; do
+			[ -e "$s" ] || continue
+			[ "$(cat "$s")" = connected ] && return 0
+			return 1
+		done
+		sleep 1
+		i=$((i + 1))
+	done
+	return 1
+}
+
+profile=$($CONFIG display auto)
+how=$profile
+if [ "$profile" = auto ]; then
+	if hdmi_connected; then profile=hdmi; else profile=headless; fi
+	how="$profile (auto)"
+fi
+
+case "$profile" in
+	hdmi)
+		status "$how"
+		uid=$(id -u doge)
+		xdg=/run/user/$uid
+		mkdir -p "$xdg" && chown doge:doge "$xdg" && chmod 700 "$xdg"
+		font=$($CONFIG font "DejaVu Sans Mono")
+		size=$($CONFIG font_size 20)
+		pad=$($CONFIG pad 0x0)
+		layout=$($CONFIG keyboard_layout us)
+		# cage -s allows switching to another console (Ctrl+Alt+F2 has a login).
+		# The dashboard has no use for a pointer, so the cursor theme is an
+		# invisible one (made by post-build.sh). When the attach ends (e.g. tmux
+		# restarted), foot and cage exit and init starts this script again.
+		exec su -s /bin/sh doge -c "export XDG_RUNTIME_DIR=$xdg LIBSEAT_BACKEND=seatd LANG=C.UTF-8 \
+			XKB_DEFAULT_LAYOUT='$layout' XCURSOR_THEME=dogecar-hidden XCURSOR_SIZE=24; \
+			exec cage -s -- foot -o 'font=$font:size=$size' -o 'pad=$pad' /usr/bin/dogecar-attach"
+		;;
+	headless)
+		status "$how"
+		;;
+	*)
+		status "unsupported: '$profile'; using headless"
+		;;
+esac
+exec /sbin/getty -L tty1 0 linux

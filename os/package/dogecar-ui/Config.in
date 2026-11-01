@@ -1,0 +1,6 @@
+config BR2_PACKAGE_DOGECAR_UI
+	bool "dogecar-ui"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	select BR2_PACKAGE_HOST_RUSTC
+	help
+	  The dogecar dashboard, built from this repository's source tree.

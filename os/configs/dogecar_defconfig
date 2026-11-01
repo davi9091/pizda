@@ -17,9 +17,15 @@ BR2_TARGET_GENERIC_HOSTNAME="dogecar"
 BR2_TARGET_GENERIC_ISSUE="dogecar"
 BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
 BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y
+# UTF-8 locale for tmux and foot (glibc doesn't build C.UTF-8 in; it must be generated)
+BR2_GENERATE_LOCALE="C.UTF-8"
 # Root stays read-only; only /data is writable (mounted by S00data)
 # BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW is not set
 BR2_SYSTEM_DHCP=""
+# eudev: needed by the display stack (input devices), and gives serial devices
+# such as /dev/ttyUSB0 to group dialout
+BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_EUDEV=y
+BR2_ROOTFS_USERS_TABLES="$(BR2_EXTERNAL_DOGECAR_PATH)/board/dogecar/users.txt"
 BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_DOGECAR_PATH)/board/dogecar/rootfs-overlay"
 BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_DOGECAR_PATH)/board/dogecar/post-build.sh"
 BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_DOGECAR_PATH)/board/dogecar/post-image.sh"
@@ -44,6 +50,29 @@ BR2_PACKAGE_RPI_FIRMWARE_BOOTCODE_BIN=y
 BR2_PACKAGE_RPI_FIRMWARE_VARIANT_PI=y
 BR2_PACKAGE_RPI_FIRMWARE_CONFIG_FILE="$(BR2_EXTERNAL_DOGECAR_PATH)/board/dogecar/config.txt"
 BR2_PACKAGE_RPI_FIRMWARE_CMDLINE_FILE="$(BR2_EXTERNAL_DOGECAR_PATH)/board/dogecar/cmdline.txt"
+# The dashboard and the tmux session it runs in
+BR2_PACKAGE_DOGECAR_UI=y
+BR2_PACKAGE_TMUX=y
+# Terminal types for attaching: from tmux itself, and from phone/PC SSH clients
+BR2_PACKAGE_NCURSES_ADDITIONAL_TERMINFO="t/tmux t/tmux-256color x/xterm x/xterm-256color"
+# Display stack for the hdmi profile (M3b): GPU driver, seat manager,
+# kiosk compositor, terminal and a monospace font with braille characters
+BR2_PACKAGE_MESA3D=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_VC4=y
+BR2_PACKAGE_MESA3D_OPENGL_EGL=y
+BR2_PACKAGE_MESA3D_OPENGL_ES=y
+BR2_PACKAGE_SEATD=y
+BR2_PACKAGE_SEATD_DAEMON=y
+BR2_PACKAGE_CAGE=y
+BR2_PACKAGE_FOOT=y
+# Keyboard layouts: without them cage has no keymap, so no keys work in the
+# kiosk (including Ctrl+Alt+Fn console switching)
+BR2_PACKAGE_XKEYBOARD_CONFIG=y
+BR2_PACKAGE_DEJAVU=y
+# BR2_PACKAGE_DEJAVU_SANS is not set
+# BR2_PACKAGE_DEJAVU_SERIF is not set
+# BR2_PACKAGE_DEJAVU_SANS_CONDENSED is not set
+# BR2_PACKAGE_DEJAVU_SERIF_CONDENSED is not set
 # /data maintenance: fsck, resize2fs, sfdisk, partx
 BR2_PACKAGE_E2FSPROGS=y
 BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y

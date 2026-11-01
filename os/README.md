@@ -60,6 +60,32 @@ Put the card in the Pi and power it on. The first boot takes a few seconds longe
 
 Quick checks: `mount` shows `/` as read-only squashfs and `/data` as ext4, `df -h /data` shows roughly the card's size, and `cat /run/dogecar/data_status` prints `ok`.
 
+### 7. The dashboard
+
+The dashboard starts at boot in a tmux session, whether or not anyone is watching.
+
+- **With a screen on the HDMI port**, it's shown full-screen. Ctrl+Alt+F2 switches to a login prompt; Ctrl+Alt+F1 goes back.
+- **From any login** (serial, the HDMI login on tty2, later SSH), view it with:
+
+  ```sh
+  dogecar-attach        # Ctrl-b d to detach; the dashboard keeps running
+  ```
+
+Quitting the app (`q` or Esc) just restarts it after 2 s.
+
+Settings live in `/data/dogecar.toml`, so they survive updates. None are required:
+
+```toml
+args = "--mock"                 # app arguments; e.g. "--elm /dev/ttyUSB0" for a USB ELM327
+display = "auto"                # auto (HDMI if a screen is connected), hdmi, or headless
+font = "DejaVu Sans Mono"       # hdmi profile only
+font_size = "20"
+pad = "0x0"                     # space around the dashboard in pixels, e.g. "48x24" for a TV that cuts off the edges
+keyboard_layout = "us"          # hdmi profile only; any XKB layout name, e.g. "de" or "nl"
+```
+
+`cat /run/dogecar/display_status` shows which profile is active. After changing settings, restart with `killall tmux` (init starts everything again) or reboot.
+
 ## Changing things
 
 | What | How |
@@ -68,6 +94,7 @@ Quick checks: `mount` shows `/` as read-only squashfs and `/data` as ext4, `df -
 | Kernel options | add them to `board/dogecar/linux.fragment` (`make linux-menuconfig` to explore) |
 | Firmware and boot options | `board/dogecar/config.txt`, `board/dogecar/cmdline.txt` |
 | Files in the root filesystem | `board/dogecar/rootfs-overlay/` |
+| The app in the image | change the code, then `make br-dogecar-ui-rebuild` and `make image` |
 | Partition layout | `board/dogecar/genimage.cfg.in` |
 | Buildroot version | `buildroot.version` (version and SHA256 from the release's `.sign` file) |
 

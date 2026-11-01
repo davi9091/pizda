@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs in the dashboard's tmux pane: start the app, and restart it whenever it
+# exits. Arguments come from `args` in /data/dogecar.toml (default: --mock).
+
+export LANG=C.UTF-8
+while true; do
+	args=$(/usr/libexec/dogecar/config args --mock)
+	# shellcheck disable=SC2086 # args is a list of words
+	/usr/bin/dogecar-ui $args
+	echo "dogecar-ui exited with status $?; restarting in 2 s"
+	sleep 2
+done

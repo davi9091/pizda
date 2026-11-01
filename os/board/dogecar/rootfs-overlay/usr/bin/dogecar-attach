@@ -1,0 +1,15 @@
+#!/bin/sh
+# Show the running dashboard in this terminal. Detach again with Ctrl-b d
+# (quitting the app with q only restarts it).
+
+if [ "$(id -u)" = 0 ]; then
+	exec su -s /bin/sh doge -c 'exec /usr/bin/dogecar-attach'
+fi
+
+# At boot the dashboard's tmux session may not exist yet; wait for it briefly.
+i=0
+while [ $i -lt 15 ] && ! tmux has-session -t dash 2>/dev/null; do
+	sleep 1
+	i=$((i + 1))
+done
+exec tmux -u attach -t dash

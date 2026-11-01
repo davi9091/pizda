@@ -1,0 +1,5 @@
+# Buildroot users table (see "Makeusers syntax" in the Buildroot manual).
+# doge runs the dashboard. Fixed UID so its tmux socket is /tmp/tmux-1000/;
+# video lets it use the display through seatd.
+# "*" means no password login; SSH keys come in M6b.
+doge 1000 doge 1000 * /home/doge /bin/sh dialout,tty,video dogecar dashboard
